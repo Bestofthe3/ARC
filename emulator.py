@@ -13,10 +13,40 @@ display_surface = pygame.Surface((256, 256))
 clock = pygame.Clock()
 pixel_buffer = np.zeros((256, 256), dtype=int)
 
+def rgb_to_int_singular(c: tuple[float]) -> int:
+    """Takes in 3 floats between 0 and 1 and returns the
+    color ID associated with those RGB values.
+        
+    Works when taking in a tuple of floats."""
+    c = np.clip(c, 0, 1)
+    r = int(c[0] * 255)
+    g = int(c[1] * 255)
+    b = int(c[2] * 255)
+    return (r << 16) | (g << 8) | b
+
+def rgb_to_int_ndarray(c: tuple[np.ndarray]) -> np.ndarray:
+    """Takes in 3 floats between 0 and 1 and returns the
+    color ID associated with those RGB values.
+    
+    Works when taking in a tuple of Numpy NDArrays."""
+    # Making constant inputs work
+    c = tuple(
+        np.full((256, 256), item)
+        if not isinstance(item, np.ndarray)
+        else item
+        for item in c
+    )
+    # Scaling the RGB values from in between 0 and 1
+    # to an integer between 0 and 255
+    r = (np.clip(c[0], 0, 1) * 255).astype(np.uint32)
+    g = (np.clip(c[1], 0, 1) * 255).astype(np.uint32)
+    b = (np.clip(c[2], 0, 1) * 255).astype(np.uint32)
+    return (r << 16) | (g << 8) | b
+
 def main() -> None: 
     program_start_time = time.time()
     frame_start_time = program_start_time
-    frame_idx = -1 # Will be incremented shortly
+    frame_idx = -1 # Only starts as -1
     running = True
 
     while running:
@@ -32,31 +62,14 @@ def main() -> None:
         frame_idx += 1
 
         # Computing the color of the pixels
-        # (feel free to change this when writing different programs)
-        def shader_function(x, y):
-            # PLEASE DON'T EDIT ANYTHING INSIDE THIS FUNCTION WHEN
-            # WRITING SHADER PROGRAMS FOR THE ARC TO RUN
-            def rgb_to_col_int(c: tuple) -> int:
-                """Takes in 3 floats between 0 and 1 and returns the
-                color ID associated with those RGB values."""
-                # Making constant inputs work
-                c = tuple(
-                    np.full((256, 256), item)
-                    if not isinstance(item, np.ndarray)
-                    else item
-                    for item in c
-                )
-                # Scaling the RGB values from in between 0 and 1
-                # to an integer between 0 and 255
-                r = (np.clip(c[0], 0, 1) * 255).astype(np.uint32)
-                g = (np.clip(c[1], 0, 1) * 255).astype(np.uint32)
-                b = (np.clip(c[2], 0, 1) * 255).astype(np.uint32)
-                return (r << 16) | (g << 8) | b
+        def shader_program(x, y):
+            pixels = rgb_to_int_ndarray((x / SCREEN_SIZE, y / SCREEN_SIZE, abs(m.sin(TIME))))
 
-            # YOU CAN EDIT THIS PART
-            return rgb_to_col_int((x / SCREEN_SIZE, y / SCREEN_SIZE, abs(m.sin(TIME))))
+            pixels[(x == 128) & (y == 128)] = rgb_to_int_singular((0, 0, 0))
+
+            return pixels
         
-        pixel_buffer = np.fromfunction(shader_function, (256, 256), dtype=int)
+        pixel_buffer = np.fromfunction(shader_program, (256, 256), dtype=int)
 
         # Flipping the array vertically so that (0, 0) is in the bottom-left
         pixel_buffer = np.flip(pixel_buffer, axis=1)
