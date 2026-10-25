@@ -4,6 +4,11 @@ import time
 import math as m
 
 SCREEN_SIZE = 256
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+WHITE = (255, 255, 255)
 
 pygame.init()
 screen = pygame.display.set_mode((256, 256), pygame.SCALED)
@@ -43,12 +48,41 @@ def rgb_to_int_ndarray(c: tuple[np.ndarray]) -> np.ndarray:
     b = (np.clip(c[2], 0, 1) * 255).astype(np.uint32)
     return (r << 16) | (g << 8) | b
 
+def draw_character(
+    pixels_array: np.ndarray,
+    idx: int,
+    pos: tuple[int, int]
+) -> np.ndarray:
+    """ A black magic function that is used in the console program to
+    dra characters from the emulator_characters.bin file."""
+
+    with open("emulator_characters.bin", "rb") as file:
+        data = np.fromfile(file, dtype=np.uint8)
+    if data.size == 0 or data.size % 45 != 0:
+        raise ValueError(
+            f"emulator_characters.bin must contain complete "
+            f"45-byte-long characters; found {data.size} bytes"
+        )
+    characters = data.reshape(-1, 5, 3, 3)
+    character = np.rot90(characters[idx], k=3, axes=(0, 1))
+
+    rgb = character.astype(np.uint32)
+    packed_colors = (rgb[..., 0] << 16) | (rgb[..., 1] << 8) | rgb[..., 2]
+    mask = np.any(character != BLACK, axis=-1)
+    row, column = pos
+    character_pixels_roi = pixels_array[
+        row : row + 3,
+        column : column + 5
+    ]
+    character_pixels_roi[mask] = packed_colors[mask]
+    return pixels_array
+
 def main() -> None: 
     program_start_time = time.time()
     frame_start_time = program_start_time
-    frame_idx = -1 # Only starts as -1
+    frame_idx = -1
     running = True
-
+    
     while running:
         # Initialization
         for event in pygame.event.get():
@@ -61,15 +95,19 @@ def main() -> None:
         TIME = time.time() - program_start_time
         frame_idx += 1
 
+        class Programs:
+            def shader_program(x, y):
+                pixels = rgb_to_int_ndarray((x / SCREEN_SIZE, y / SCREEN_SIZE, m.sin(TIME) ** 2))
+                pixels[(x == 180) & (y == 76)] = rgb_to_int_singular((0, 0, 0))
+                return pixels
+            
+            def console_program():
+                pixels = np.zeros((256, 256), dtype=np.uint32)
+                pixels = draw_character(pixels, 0, (0, 0))
+                return pixels
+
         # Computing the color of the pixels
-        def shader_program(x, y):
-            pixels = rgb_to_int_ndarray((x / SCREEN_SIZE, y / SCREEN_SIZE, abs(m.sin(TIME))))
-
-            pixels[(x == 128) & (y == 128)] = rgb_to_int_singular((0, 0, 0))
-
-            return pixels
-        
-        pixel_buffer = np.fromfunction(shader_program, (256, 256), dtype=int)
+        pixel_buffer = Programs.console_program()
 
         # Flipping the array vertically so that (0, 0) is in the bottom-left
         pixel_buffer = np.flip(pixel_buffer, axis=1)
