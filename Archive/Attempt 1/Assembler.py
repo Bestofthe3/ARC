@@ -33,5 +33,3 @@ def assemble(path_to_file: str):
 
 if __name__ == "__main__":
     assemble("instructions.arc")
-
-# Bridger Barney, W# W01556843, Fall 2026 classes

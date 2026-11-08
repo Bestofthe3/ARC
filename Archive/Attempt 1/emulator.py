@@ -1,14 +1,19 @@
+"""An emulator for the ARC Microcomputer. Comes pre-installed with
+multiple programs. You can decide which program to run by changing
+the 'pixel_buffer = Programs.console_program()' line in main()."""
+
 import pygame
 import numpy as np
 import time
 import math as m
 
 SCREEN_SIZE = 256
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-WHITE = (255, 255, 255)
+BLACK = 0
+WHITE = 255
+CHARACTERS = [' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '(', ')', '[', ']', '{', '}', '+', '-', '=', '<', '>', ',', '.', '/', '\\', "'", '"', '_', '@', '#', '$', '%', '^', '&', '*', '?', '!', '~', '\n']
+# TODO: Edit the emulator_characters.bin file to include all of the
+# characters in the order defined by the above list. CHARACTERS
+# can have a maximum length of 256; one byte per character.
 
 pygame.init()
 screen = pygame.display.set_mode((256, 256), pygame.SCALED)
@@ -50,32 +55,45 @@ def rgb_to_int_ndarray(c: tuple[np.ndarray]) -> np.ndarray:
 
 def draw_character(
     pixels_array: np.ndarray,
-    idx: int,
+    idx: int | str,
     pos: tuple[int, int]
-) -> np.ndarray:
+) -> None:
     """ A black magic function that is used in the console program to
-    dra characters from the emulator_characters.bin file."""
+    draw characters from the emulator_characters.bin file.
+    
+    Edits pixels_array in-place."""
 
     with open("emulator_characters.bin", "rb") as file:
         data = np.fromfile(file, dtype=np.uint8)
-    if data.size == 0 or data.size % 45 != 0:
+    if data.size == 0 or data.size % 15 != 0:
         raise ValueError(
             f"emulator_characters.bin must contain complete "
-            f"45-byte-long characters; found {data.size} bytes"
+            f"15-byte-long characters; found {data.size} bytes"
         )
-    characters = data.reshape(-1, 5, 3, 3)
-    character = np.rot90(characters[idx], k=3, axes=(0, 1))
+    characters = data.reshape(-1, 5, 3)
+    character: np.ndarray = np.rot90(characters[idx], k=3, axes=(0, 1))
 
+    # Allowing for strings to be passed into draw_character
+    if isinstance(idx, str):
+        if not idx in CHARACTERS:
+            raise ValueError(f"Invalid character: {idx}")
+        idx = CHARACTERS.index(idx)
+    
     rgb = character.astype(np.uint32)
-    packed_colors = (rgb[..., 0] << 16) | (rgb[..., 1] << 8) | rgb[..., 2]
+    # Converts the grayscale brightness values found in
+    # emulator_characters.py into rgb values
+    packed_colors = ((rgb << 16) | (rgb << 8) | rgb)
+    # I don't really know how the mask works tbh
     mask = np.any(character != BLACK, axis=-1)
     row, column = pos
+
+    # This alters pixels_array in-place using array slicing, so there is
+    # no need to return anything.
     character_pixels_roi = pixels_array[
         row : row + 3,
         column : column + 5
     ]
     character_pixels_roi[mask] = packed_colors[mask]
-    return pixels_array
 
 def main() -> None: 
     program_start_time = time.time()
@@ -96,18 +114,30 @@ def main() -> None:
         frame_idx += 1
 
         class Programs:
-            def shader_program(x, y):
-                pixels = rgb_to_int_ndarray((x / SCREEN_SIZE, y / SCREEN_SIZE, m.sin(TIME) ** 2))
+            def shader_program():
+                x, y = np.indices((256, 256))
+                pixels = rgb_to_int_ndarray(
+                    (
+                        (x % 4 == 0) | (y % 6 == 0), # R
+                        0, # G
+                        0 # B
+                    )
+                )
                 pixels[(x == 180) & (y == 76)] = rgb_to_int_singular((0, 0, 0))
                 return pixels
             
             def console_program():
                 pixels = np.zeros((256, 256), dtype=np.uint32)
-                pixels = draw_character(pixels, 0, (0, 0))
+                # TODO: Finish this so that it just types a character
+                # on the screen at a position index automatically
+                #def type_characters(pix_array, string: str, )
+                draw_character(pixels, 3, (1, 250))
+                draw_character(pixels, 1, (3, 248))
                 return pixels
 
         # Computing the color of the pixels
-        pixel_buffer = Programs.console_program()
+        #pixel_buffer = Programs.console_program()
+        pixel_buffer = Programs.shader_program()
 
         # Flipping the array vertically so that (0, 0) is in the bottom-left
         pixel_buffer = np.flip(pixel_buffer, axis=1)
