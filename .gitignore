@@ -1,5 +1,6 @@
 # Custom
 .vscode/
+emulator_session.vim
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
