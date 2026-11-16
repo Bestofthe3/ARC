@@ -114,6 +114,7 @@ def main() -> None:
         frame_idx += 1
 
         class Programs:
+            @staticmethod
             def shader_program():
                 x, y = np.indices((256, 256))
                 pixels = rgb_to_int_ndarray(
@@ -126,6 +127,7 @@ def main() -> None:
                 pixels[(x == 180) & (y == 76)] = rgb_to_int_singular((0, 0, 0))
                 return pixels
             
+            @staticmethod
             def console_program():
                 pixels = np.zeros((256, 256), dtype=np.uint32)
                 # TODO: Finish this so that it just types a character
