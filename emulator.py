@@ -1,12 +1,30 @@
 # TODO: Figure out how all this works. Find the simplest solution.
 # https://github.com/copilot/c/5061afb3-cab0-445b-98c:w2-b51985c6c33b
 import multiprocessing as mp
+import numpy as np
 import time
+import pygame
+import mmap
 from pathlib import Path
-from renderer import render_vram
 
-instructions_per_draw = 4
-draw_frequency = 24
+DRAW_FREQUENCY = 24
+CLOCK_PERIOD = 1 / 10_000
+INSTRUCTION_PERIOD = 10 * CLOCK_PERIOD
+"""Every instruction's length must be a multiple of this period."""
+RESOLUTION = (128, 128)
+SCREEN_W, SCREEN_H = RESOLUTION
+MEM_SECTION_SIZES = [
+    8192, # Program memory
+    105984, # Free memory
+    16384, # Video memory
+    512 # Memory dedicated to the Stack
+]
+MEM_SECTION_STARTS = [
+    0x0, # Program memory
+    0x2000, # Free memory
+    0xBE00, # Video memory
+    0xFE00 # Memory dedicated to the Stack
+]
 
 def bytes_to_word_ints(inp: bytes) -> np.ndarray:
     bin_digs = [f"{b:08b}" for b in inp]
