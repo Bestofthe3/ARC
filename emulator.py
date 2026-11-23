@@ -8,30 +8,92 @@ from renderer import render_vram
 instructions_per_draw = 4
 draw_frequency = 24
 
-def bytes_to_words(inp: bytes) -> list[int]:
+def bytes_to_word_ints(inp: bytes) -> np.ndarray:
     bin_digs = [f"{b:08b}" for b in inp]
     word_digs = []
-    for i in range(0, len(bin_digs) + 1, 2):
-        word_digs.append(bin_digs[i] + bin_digs[i+1])
+    for i in range(0, len(bin_digs), 2): # <- THIS SEEMS TO WORK NOW
+        word_digs.append(int(bin_digs[i] + bin_digs[i+1], 2))
     return word_digs
 
-def words_to_bytes(inp: list[int]) -> bytes:
+def words_to_bytes(inp: np.ndarray) -> bytes:
     res = bytearray()
     for i, word in enumerate(inp):
-        left_half = bin(inp)[2:][:8]
+        left_half = bin(word)[2:][:8]
         res.append(int(left_half))
-        right_half = bin(inp)[2:][8:]
+        right_half = bin(word)[2:][8:]
         res.append(int(right_half))
+    return bytes(res)
 
-def read_vram_data() -> list[int]:
-    path =  Path("Data\\memory.bin")
-    data = path.read_bytes() if path.exists() else b""
-    return bytes_to_words(data)
+def get_mem_data(section: int, file_lock) -> np.ndarray:
+    '''Returns the data in `memory.bin` from section `section` as an
+    array of 16-bit integers.
+    
+    If `section = 0`: return the data from word address 0x0000 to
+    0x1FFF (AKA byte `0` to `16383`) inclusive. This is the Program
+    Memory, or where all the instructions are stored.
 
-def write_vram(data: list[int], file_lock) -> None:
+    If `section = 1`: return data from word address `0x2000` to
+    `0xBDFF` (AKA byte `16384` to `113663`) inclusive. This is the
+    Video Memory, or VRAM, where the pixel data is stored.
+
+    If `section = 2`: return data from word address `0xDE00` to
+    `0xFDFF` (AKA byte `113664` to `130047`) inclusive. This is the
+    Video Memory, or VRAM, where the pixel data is stored.
+    
+    If `section = 3`: return data from word address `0xFE00` to
+    `0xFFFF` (AKA byte `130048` to `131070`) inclusive. This is where
+    the Program Stack is stored, which starts at address `0xFFFF` and
+    grows downwards.
+    '''
+
+    path =  "Data\\memory.bin"
+    with file_lock:
+        with open(path, 'rb') as f:
+            with mmap.mmap(
+                f.fileno(),
+                length=0,
+                access=mmap.ACCESS_READ
+            ) as mm:
+                # converts the word addresses to bytes for mapping to a list
+                match section:
+                    case 0:
+                        data = mm[0 : (0x1FFFF + 1) * 2]
+                    case 1:
+                        data = mm[0x2000 : (0xBDFF + 1) * 2]
+                    case 2:
+                        data = mm[0xBE00 * 2 : (0xFDFF + 1) * 2]
+                    case 3:
+                        data = mm[0xFE00 : (0xFFFF + 1) * 2]
+    return np.frombuffer(data, dtype=">u2").astype(np.uint16)
+
+def write_mem_data(section: int, data: np.ndarray, file_lock) -> None:
+    """`section` follows the same pattern as that in `get_mem_data`.
+    
+    0 -> Program Memory
+    
+    1 -> Free Memory
+    
+    2 -> Video Memory
+    
+    3 ->  Stack Memory
+    """
+
+    if data.size != MEM_SECTION_SIZES[section]:
+        raise ValueError((
+            f"VRAM section {section} must contain "
+            f"{MEM_SECTION_SIZES[section]} words, got {data.size}"
+        ))
+    
+    section_bytes = np.asarray(data, dtype=">u2").tobytes()
     with file_lock:
         path = Path("Data\\memory.bin")
-        path.write_bytes(words_to_bytes(data))
+        with path.open("r+b") as memory_file:
+            memory_file.seek(MEM_SECTION_STARTS[section] * 2)
+            memory_file.write(section_bytes)
+
+def binary(inp: int) -> str:
+    '''Returns the binary string of `inp`, without the `0b` prefix.'''
+    return bin(inp)[2:]
 
 '''
 def update_shared_file(file_lock, payload):
