@@ -204,22 +204,85 @@ def run_draw_loop(period, stop, file_lock):
     finally:
         pygame.quit()
 
+def run_interpreter_loop(stop, file_lock):
+    '''A function that runs once per process, but has a loop inside
+    that runs once every interval of length `period`.'''
+    instruction_addr = 0 # The memory is word-addressable
     next_run = time.monotonic()
+    program_data = get_mem_data(0, file_lock)
+    free_mem = get_mem_data(1, file_lock)
+    video_mem = get_mem_data(2, file_lock)
+    stack_mem = get_mem_data(3, file_lock)
+    frame_period = 1 / DRAW_FREQUENCY
+    next_vram_write = next_run + frame_period
 
     while not stop.is_set():
-        # Runs one cycle of this loop's function
-        func(file_lock, iteration)
-        iteration += 1
-
-        # Aim for a steady period; skip missed runs rather than catching up.
-        next_run += period
         now = time.monotonic()
-        if next_run <= now:
-            missed = int((now - next_run) // period) + 1
-            next_run += missed * period
+        if now >= next_run:
+            #instruction_start_time = time.perf_counter()
 
-        stop.wait(max(0, next_run - time.monotonic()))
+            opcode = program_data[instruction_addr] >> 12
 
+            # Running the instructions
+            match opcode:
+                case 0: # NOP
+                    time.sleep(INSTRUCTION_PERIOD)
+                    instruction_addr += 1
+                case 1: # READ
+                    ...
+
+                case 2: # WRITE
+                    ...
+                case 3: # LOAD
+                    ...
+                case 4: # STORE
+                    ...
+                case 5: # ARITH
+                    ...
+                case 6: # BARITH
+                    ...
+                case 7: # SHIFT
+                    ...
+                case 8: # PUSHPOP
+                    ...
+                case 9: # SET
+                    ...
+                case 10: # MOVE
+                    ...
+                case 11: # JIF
+                    ...
+                case 12: # JIFF
+                    ...
+                case 13: # TIME
+                    ...
+                case 14: # READIO
+                    ...
+                case 15: # EXIT
+                    ...
+                    stop.set()
+                    break
+
+            #i += 1
+            # Aim for a steady instruction period; skip missed runs.
+            next_run += INSTRUCTION_PERIOD
+            now = time.monotonic()
+            if next_run <= now:
+                missed = int((now - next_run) // INSTRUCTION_PERIOD) + 1
+                next_run += missed * INSTRUCTION_PERIOD
+            
+            #print((time.perf_counter() - instruction_start_time) / INSTRUCTION_PERIOD)
+
+        # Writing the video_mem variable to memory.bin
+        # TODO: Consider writing every variable to their respective .bin files
+        now = time.monotonic()
+        if now >= next_vram_write:
+            write_mem_data(2, video_mem, file_lock)
+            now = time.monotonic()
+            missed = int((now - next_vram_write) // frame_period) + 1
+            next_vram_write += missed * frame_period
+
+        next_wake = min(next_run, next_vram_write)
+        stop.wait(max(0, next_wake - time.monotonic()))
 
 if __name__ == "__main__":
     stop = mp.Event()
