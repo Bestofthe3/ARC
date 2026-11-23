@@ -149,9 +149,61 @@ def draw(file_lock, iteration):
     render_vram()
 '''
 
+def run_draw_loop(period, stop, file_lock):
+    '''A function that runs once, but has a loop inside
+    that runs once every interval of length `period`. Renders the data
+    in the VRAM section of the `memory.bin` file to a 128x128 Pygame
+    window.'''
+    next_run = time.monotonic()
 
-def run_periodically(period, func, stop, file_lock):
-    iteration = 0
+    pygame.init()
+    screen = pygame.display.set_mode((256, 256), pygame.SCALED)
+    pygame.display.set_caption("ARC Screen Output")
+    screen.fill((0, 0, 0))
+    display_surface = pygame.Surface(RESOLUTION)
+    pixel_buffer = np.zeros(RESOLUTION, dtype=int)
+    clock = pygame.Clock()
+    try:
+        while not stop.is_set():
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    stop.set()
+                    break
+
+            if stop.is_set():
+                break
+
+            pixel_buffer = get_mem_data(2, file_lock).reshape(
+                (SCREEN_H, SCREEN_W)
+            )
+
+            # Pygame boilerplate
+            r = ((pixel_buffer >> 10) & 0x1F) * 255 // 31 # Leftmost (largest) 8 bits
+            g = ((pixel_buffer >> 5) & 0x1F) * 255 // 31
+            b = (pixel_buffer & 0x1F) * 255 // 31 # Rightmost (smallest) 8 bits
+            rgb_rows = np.stack([r, g, b], axis=-1).astype(np.uint8)
+            rgb_buffer = np.flip(rgb_rows, axis=0).swapaxes(0, 1)
+            pygame.surfarray.blit_array(display_surface, rgb_buffer)
+            scaled_surface = pygame.transform.scale(
+                display_surface,
+                screen.get_size()
+            )
+            screen.blit(scaled_surface, (0, 0))
+            pygame.display.flip()
+
+            # Timing boilerplate
+            next_run += period
+            now = time.monotonic()
+            if next_run <= now:
+                missed = int((now - next_run) // period) + 1
+                next_run += missed * period
+            stop.wait(max(0, next_run - time.monotonic()))
+            clock.tick()
+
+            #print(clock.get_fps())
+    finally:
+        pygame.quit()
+
     next_run = time.monotonic()
 
     while not stop.is_set():
