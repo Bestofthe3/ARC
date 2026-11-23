@@ -172,29 +172,36 @@ def run_periodically(period, func, stop, file_lock):
 if __name__ == "__main__":
     stop = mp.Event()
     file_lock = mp.Lock()
-    # TODO: Global variables in python?
-    # Also, try to find where hexed.it is stored on the computer so you can
-    # modify the memory file to test if some of the code so far is working
 
-    # CHANGE: Set the periods for loops A and B.
-    process_a = mp.Process(
-        target=run_periodically,
-        args=(1 / (draw_frequency * instructions_per_draw), interpreter, stop, file_lock),
+    interpreter_process = mp.Process(
+        target=run_interpreter_loop,
+        args=(
+            #1 / (draw_frequency * instructions_per_draw),
+            stop,
+            file_lock
+        ),
     )
-    process_b = mp.Process(
-        target=run_periodically,
-        args=(1 / draw_frequency, draw, stop, file_lock),
+    draw_process = mp.Process(
+        target=run_draw_loop,
+        args=(
+            1 / DRAW_FREQUENCY,
+            stop,
+            file_lock
+        ),
     )
 
-    process_a.start()
+    interpreter_process.start()
     # Offsetting the vram read and write by 1/2 of the frequency time
-    time.sleep(1/ (draw_frequency * 2))
-    process_b.start()
+    # TODO: consider removing this line
+    time.sleep(1 / (DRAW_FREQUENCY * 2))
+    draw_process.start()
 
     try:
-        process_a.join()
-        process_b.join()
+        interpreter_process.join()
+        draw_process.join()
     except KeyboardInterrupt:
+        pass
+    finally:
         stop.set()
-        process_a.join()
-        process_b.join()
+        interpreter_process.join()
+        draw_process.join()
