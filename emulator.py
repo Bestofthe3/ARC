@@ -123,37 +123,31 @@ def update_shared_file(file_lock, payload):
         # code needs to change in the file.
         data = path.read_bytes() if path.exists() else b""
         path.write_bytes(data + payload)
-'''
+
 
 def interpreter(file_lock, iteration):
-    # NOTE: everything in this function and the next will be changed to be
-    # the code for the two processing loops.
     # Consider making this loop the interpreter.
 
-    # TEST: this is here until proper code running is implemented
-    # By the way, what is the best way to do large lists of numbers like this?
-    data = [0] * 128 * 128
-    data[500] = 30000
-
     # Write data to vram only as often as the frame is being drawn
-    if iteration % instructions_per_draw == 0:
-        write_vram(data)
-
+    # if iteration % instructions_per_draw == 0:
+    #     write_vram(data, file_lock)
+    ...
 
 def draw(file_lock, iteration):
-    '''Draws the pixel data from RAM address 0xDE00 to 0xFDFF to the screen.'''
+    Draws the pixel data from RAM address 0xDE00 to 0xFDFF to the screen.
     # CHANGE: Put one cycle of loop B's work here.
     # This function is called once each time loop B's schedule fires.
     pass
 
+    # TODO: Consider removing this function
+
     with file_lock:
         path = Path("Data\\memory.bin") 
-        data = bytes_to_words(path.read_bytes() if path.exists() else b"")
-        # TODO: write the stuff with the pygame rendering and whatnot from
-        # the old emulator file so render a test scene with the data in
-        # memory.bin
+        data = bytes_to_word_ints(path.read_bytes() if path.exists() else b"")
+        ...
 
     render_vram()
+'''
 
 
 def run_periodically(period, func, stop, file_lock):
