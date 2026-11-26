@@ -1,5 +1,3 @@
-# TODO: Figure out how all this works. Find the simplest solution.
-# https://github.com/copilot/c/5061afb3-cab0-445b-98c:w2-b51985c6c33b
 import multiprocessing as mp
 import numpy as np
 import time
@@ -159,42 +157,6 @@ def binary(inp: int, length: int | None = None) -> str:
             return res[len(res) - length :]
     else:
         return bin(inp)[2:]
-
-'''
-def update_shared_file(file_lock, payload):
-    # Keep the whole read/modify/write operation protected.
-    with file_lock:
-        path = Path("Data\\memory.bin")
-        # NOTE: change this to whatever modification operations you do on 
-        # the file. Also change the 'payload' argument to be whatever the
-        # code needs to change in the file.
-        data = path.read_bytes() if path.exists() else b""
-        path.write_bytes(data + payload)
-
-
-def interpreter(file_lock, iteration):
-    # Consider making this loop the interpreter.
-
-    # Write data to vram only as often as the frame is being drawn
-    # if iteration % instructions_per_draw == 0:
-    #     write_vram(data, file_lock)
-    ...
-
-def draw(file_lock, iteration):
-    Draws the pixel data from RAM address 0xDE00 to 0xFDFF to the screen.
-    # CHANGE: Put one cycle of loop B's work here.
-    # This function is called once each time loop B's schedule fires.
-    pass
-
-    # TODO: Consider removing this function
-
-    with file_lock:
-        path = Path("Data\\memory.bin") 
-        data = bytes_to_word_ints(path.read_bytes() if path.exists() else b"")
-        ...
-
-    render_vram()
-'''
 
 def run_draw_loop(period, stop, file_lock):
     '''A function that runs once, but has a loop inside
