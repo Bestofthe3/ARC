@@ -17,7 +17,6 @@ SECTION_SIZES = [
     40448, # Free memory
     16384, # Video memory
     512, # Memory dedicated to the Stack
-
     # This is measured in 64-bit blocks
     65536
 ]
@@ -103,7 +102,10 @@ def get_data(section: int, file_lock) -> np.ndarray:
                         data = mm[0xFE00  * 2: (0xFFFF + 1) * 2]
                     case 4:
                         data = mm[:]
-    return np.frombuffer(data, dtype=">u2").astype(np.uint16)
+    if section != 4:
+        return np.frombuffer(data, dtype=">u2").astype(np.uint16)
+    else:
+        return np.frombuffer(data, dtype=">u8").astype(np.uint64)
 
 def write_data(section: int, data: np.ndarray, file_lock) -> None:
     """`section` follows the same pattern as that in `get_data`.
@@ -120,10 +122,16 @@ def write_data(section: int, data: np.ndarray, file_lock) -> None:
     """
 
     if data.size != SECTION_SIZES[section]:
-        raise ValueError((
-            f"memory section {section} must contain "
-            f"{SECTION_SIZES[section]} words, got {data.size}"
-        ))
+        if section != 4:
+            raise ValueError((
+                f"memory section {section} must contain "
+                f"{SECTION_SIZES[section]} words, got {data.size}"
+            ))
+        else:
+            raise ValueError((
+                f"section 4 (disc) must contain 65536 blocks, "
+                f"got {data.size}"
+            ))
     
     section_bytes = np.asarray(data, dtype=">u2").tobytes()
     with file_lock:
@@ -216,29 +224,65 @@ def run_draw_loop(period, stop, file_lock):
 def run_interpreter_loop(stop, file_lock):
     '''A function that runs once per process, but has a loop inside
     that runs once every interval of length `period`.'''
-    instruction_addr = 0 # The memory is word-addressable
     next_run = time.monotonic()
-    program_data = get_mem_data(0, file_lock)
-    free_mem = get_mem_data(1, file_lock)
-    video_mem = get_mem_data(2, file_lock)
-    stack_mem = get_mem_data(3, file_lock)
+    program_data = get_data(0, file_lock)
+    free_mem = get_data(1, file_lock)
+    video_mem = get_data(2, file_lock)
+    stack_mem = get_data(3, file_lock)
+
+    # All of the disc and memory files
+    disc = get_data(4, file_lock)
+    mem = np.concatenate((program_data, free_mem, video_mem, stack_mem))
+
+    # A list of the data from each of the sections
+    sections = [program_data, free_mem, video_mem, stack_mem, disc]
+
     frame_period = 1 / DRAW_FREQUENCY
     next_vram_write = next_run + frame_period
+
+    # The registers are stored as variables for faster operations
+    registers = [
+        reg1 := 0,
+        reg2 := 0,
+        reg3 := 0,
+        reg4 := 0
+    ]
+    program_counter = 0 # The memory is word-addressable
+    stack_pointer = 0
 
     while not stop.is_set():
         now = time.monotonic()
         if now >= next_run:
             #instruction_start_time = time.perf_counter()
 
-            opcode = program_data[instruction_addr] >> 12
+            opcode = program_data[program_counter] >> 12
 
             # Running the instructions
             match opcode:
+                
                 case 0: # NOP
                     time.sleep(INSTRUCTION_PERIOD)
-                    instruction_addr += 1
+                    program_counter += 1
+
                 case 1: # READ
-                    ...
+                    word_length_of_instruction = 2
+                    # Fetching the two argument inputs
+                    instruction_words: list[np.uint16] = list(program_data[
+                        program_counter : program_counter + word_length_of_instruction
+                    ])
+                    # Creates a 32-bit string of the entire instruction
+                    instruction_str = (
+                        binary(instruction_words[0], length=16)
+                        + binary(instruction_words[1], length=16)
+                    )
+                    mem_addr, reg = (
+                        int(instruction_str[4:20], 2),
+                        int(instruction_str[20:22], 2)
+                    )
+                    registers[reg] = mem[mem_addr]
+
+                    time.sleep(INSTRUCTION_PERIOD)
+                    program_counter += word_length_of_instruction
 
                 case 2: # WRITE
                     ...
@@ -271,7 +315,6 @@ def run_interpreter_loop(stop, file_lock):
                     stop.set()
                     break
 
-            #i += 1
             # Aim for a steady instruction period; skip missed runs.
             next_run += INSTRUCTION_PERIOD
             now = time.monotonic()
@@ -282,10 +325,10 @@ def run_interpreter_loop(stop, file_lock):
             #print((time.perf_counter() - instruction_start_time) / INSTRUCTION_PERIOD)
 
         # Writing the video_mem variable to memory.bin
-        # TODO: Consider writing every variable to their respective .bin files
         now = time.monotonic()
         if now >= next_vram_write:
-            write_mem_data(2, video_mem, file_lock)
+            for i in range(5):
+                write_data(i, sections[i], file_lock)
             now = time.monotonic()
             missed = int((now - next_vram_write) // frame_period) + 1
             next_vram_write += missed * frame_period
