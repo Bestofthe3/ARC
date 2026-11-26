@@ -109,9 +109,25 @@ def write_mem_data(section: int, data: np.ndarray, file_lock) -> None:
             memory_file.seek(MEM_SECTION_STARTS[section] * 2)
             memory_file.write(section_bytes)
 
-def binary(inp: int) -> str:
-    '''Returns the binary string of `inp`, without the `0b` prefix.'''
-    return bin(inp)[2:]
+def binary(inp: int, length: int | None = None) -> str:
+    '''Returns the binary string of `inp`, without the `0b` prefix.
+    
+    if `length` is an integer, the result will have either leading
+    zeros placed to the left or will be truncated from left to right
+    until its length is the same as `length`.'''
+    
+    if not isinstance(length, int) or length < 0:
+        raise ValueError(f"length must be a positive integer: got {length}")
+    if length == 0:
+        return ''
+    elif length is not None:
+        res = bin(inp)[2:]
+        if len(res) < length:
+            return ('0' * (length - len(res))) + res
+        elif len(res) > length:
+            return res[len(res) - length :]
+    else:
+        return bin(inp)[2:]
 
 '''
 def update_shared_file(file_lock, payload):
