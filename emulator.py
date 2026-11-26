@@ -13,11 +13,15 @@ INSTRUCTION_PERIOD = 10 * CLOCK_PERIOD
 """Every instruction's length must be a multiple of this period."""
 RESOLUTION = (128, 128)
 SCREEN_W, SCREEN_H = RESOLUTION
-MEM_SECTION_SIZES = [
+SECTION_SIZES = [
+    # These are measured in 16-bit words
     8192, # Program memory
-    105984, # Free memory
+    40448, # Free memory
     16384, # Video memory
-    512 # Memory dedicated to the Stack
+    512, # Memory dedicated to the Stack
+
+    # This is measured in 64-bit blocks
+    65536
 ]
 MEM_SECTION_STARTS = [
     0x0, # Program memory
@@ -42,29 +46,46 @@ def words_to_bytes(inp: np.ndarray) -> bytes:
         res.append(int(right_half))
     return bytes(res)
 
-def get_mem_data(section: int, file_lock) -> np.ndarray:
-    '''Returns the data in `memory.bin` from section `section` as an
+def find_section(inp: int) -> int:
+    '''Given a word address `inp` in memory, returns what section
+    of memory that word will be found in.'''
+    if not isinstance(inp, int) or inp < 0 or inp > 0xFFFF:
+        raise ValueError(f"input to find_section() must be int between 0 and 0xFFFF: got {inp}")
+    elif inp < 0x2000:
+        return 0
+    elif inp < 0xBE00:
+        return 1
+    elif inp > 0xFE00:
+        return 2
+    elif inp <= 0xFFFF:
+        return 3
+
+def get_data(section: int, file_lock) -> np.ndarray:
+    '''Returns a section of data from one of the data files as an
     array of 16-bit integers.
     
-    If `section = 0`: return the data from word address 0x0000 to
-    0x1FFF (AKA byte `0` to `16383`) inclusive. This is the Program
+    If `section = 0`: return the data in memory from word address 0x0000
+    to 0x1FFF (AKA byte `0` to `16383`) inclusive. This is the Program
     Memory, or where all the instructions are stored.
 
-    If `section = 1`: return data from word address `0x2000` to
+    If `section = 1`: return data in memory from word address `0x2000`
+    to
     `0xBDFF` (AKA byte `16384` to `113663`) inclusive. This is the
     Video Memory, or VRAM, where the pixel data is stored.
 
-    If `section = 2`: return data from word address `0xDE00` to
-    `0xFDFF` (AKA byte `113664` to `130047`) inclusive. This is the
+    If `section = 2`: return data in memory from word address `0xDE00`
+    to `0xFDFF` (AKA byte `113664` to `130047`) inclusive. This is the
     Video Memory, or VRAM, where the pixel data is stored.
     
-    If `section = 3`: return data from word address `0xFE00` to
-    `0xFFFF` (AKA byte `130048` to `131070`) inclusive. This is where
+    If `section = 3`: return data in memory from word address `0xFE00`
+    to `0xFFFF` (AKA byte `130048` to `131070`) inclusive. This is where
     the Program Stack is stored, which starts at address `0xFFFF` and
     grows downwards.
+
+    If `section = 4`: return all 512 Kb of data stored in `disc.bin`.
     '''
 
-    path =  "Data\\memory.bin"
+    path =  "Data\\memory.bin" if section != 4 else "Data\\disc.bin"
     with file_lock:
         with open(path, 'rb') as f:
             with mmap.mmap(
@@ -75,17 +96,19 @@ def get_mem_data(section: int, file_lock) -> np.ndarray:
                 # converts the word addresses to bytes for mapping to a list
                 match section:
                     case 0:
-                        data = mm[0 : (0x1FFFF + 1) * 2]
+                        data = mm[0 : (0x1FFF + 1) * 2]
                     case 1:
-                        data = mm[0x2000 : (0xBDFF + 1) * 2]
+                        data = mm[0x2000 * 2 : (0xBDFF + 1) * 2]
                     case 2:
                         data = mm[0xBE00 * 2 : (0xFDFF + 1) * 2]
                     case 3:
-                        data = mm[0xFE00 : (0xFFFF + 1) * 2]
+                        data = mm[0xFE00  * 2: (0xFFFF + 1) * 2]
+                    case 4:
+                        data = mm[:]
     return np.frombuffer(data, dtype=">u2").astype(np.uint16)
 
-def write_mem_data(section: int, data: np.ndarray, file_lock) -> None:
-    """`section` follows the same pattern as that in `get_mem_data`.
+def write_data(section: int, data: np.ndarray, file_lock) -> None:
+    """`section` follows the same pattern as that in `get_data`.
     
     0 -> Program Memory
     
@@ -93,21 +116,29 @@ def write_mem_data(section: int, data: np.ndarray, file_lock) -> None:
     
     2 -> Video Memory
     
-    3 ->  Stack Memory
+    3 -> Stack Memory
+
+    4 -> Disc
     """
 
-    if data.size != MEM_SECTION_SIZES[section]:
+    if data.size != SECTION_SIZES[section]:
         raise ValueError((
-            f"VRAM section {section} must contain "
-            f"{MEM_SECTION_SIZES[section]} words, got {data.size}"
+            f"memory section {section} must contain "
+            f"{SECTION_SIZES[section]} words, got {data.size}"
         ))
     
     section_bytes = np.asarray(data, dtype=">u2").tobytes()
     with file_lock:
-        path = Path("Data\\memory.bin")
-        with path.open("r+b") as memory_file:
-            memory_file.seek(MEM_SECTION_STARTS[section] * 2)
-            memory_file.write(section_bytes)
+        if section != 4:
+            path = Path("Data\\memory.bin")
+            with path.open("r+b") as memory_file:
+                memory_file.seek(MEM_SECTION_STARTS[section] * 2)
+                memory_file.write(section_bytes)
+        else:
+            # TODO: test if this works
+            path = Path("Data\\disc.bin")
+            with path.open("r+b") as memory_file:
+                memory_file.write(section_bytes)
 
 def binary(inp: int, length: int | None = None) -> str:
     '''Returns the binary string of `inp`, without the `0b` prefix.
@@ -189,7 +220,7 @@ def run_draw_loop(period, stop, file_lock):
             if stop.is_set():
                 break
 
-            pixel_buffer = get_mem_data(2, file_lock).reshape(
+            pixel_buffer = get_data(2, file_lock).reshape(
                 (SCREEN_H, SCREEN_W)
             )
 
